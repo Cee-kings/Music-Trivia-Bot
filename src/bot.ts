@@ -217,8 +217,6 @@ async function handleQuizCommand(interaction: ChatInputCommandInteraction): Prom
     return;
   }
 
-  await interaction.deferReply();
-
   const correctSong = getRandomSong();
   const wrongChoices = getWrongChoices(correctSong, 2);
   const allChoices = [correctSong, ...wrongChoices].sort(() => Math.random() - 0.5);
@@ -230,7 +228,7 @@ async function handleQuizCommand(interaction: ChatInputCommandInteraction): Prom
 
   const embed = buildQuizEmbed(allChoices, correctSong.youtubeUrl, voiceAttempted);
   const row = buildButtonRow(allChoices);
-  await interaction.editReply({ embeds: [embed], components: [row] });
+  await interaction.reply({ embeds: [embed], components: [row] });
 
   const round: ActiveRound = {
     correctSong,
