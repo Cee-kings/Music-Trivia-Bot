@@ -1,3 +1,217 @@
+=== src/db.ts ===
+import { drizzle } from "drizzle-orm/node-postgres";
+import pg from "pg";
+import * as schema from "./schema.js";
+
+const { Pool } = pg;
+
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL must be set");
+}
+
+export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const db = drizzle(pool, { schema });
+
+/**
+ * Creates tables if they don't exist yet.
+ * Runs automatically on startup so no separate migration step is needed.
+ */
+export async function migrateDb(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS leaderboard (
+      id               SERIAL PRIMARY KEY,
+      discord_user_id  TEXT    NOT NULL,
+      username         TEXT    NOT NULL,
+      wins             INTEGER NOT NULL DEFAULT 0,
+      total_answers    INTEGER NOT NULL DEFAULT 0,
+      correct_answers  INTEGER NOT NULL DEFAULT 0,
+      best_time_ms     INTEGER,
+      updated_at       TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+  console.log("[db] Tables ready");
+}
+=== src/index.ts ===
+import path from "path";
+import ffmpegPath from "ffmpeg-static";
+import { migrateDb } from "./db.js";
+import { createBot } from "./bot.js";
+
+if (ffmpegPath) {
+  const dir = path.dirname(ffmpegPath);
+  process.env.PATH = `${dir}:${process.env.PATH ?? ""}`;
+  console.log(`[startup] ffmpeg found at: ${ffmpegPath}`);
+} else {
+  console.warn("[startup] ffmpeg-static returned null — relying on system ffmpeg");
+}
+
+console.log("[startup] Music Trivia Bot starting…");
+
+migrateDb()
+  .then(() => {
+    createBot();
+    console.log("[startup] Bot is running");
+  })
+  .catch((err) => {
+    console.error("[startup] Failed to migrate database:", err);
+    process.exit(1);
+  });
+=== src/leaderboard.ts ===
+import { db } from "./db.js";
+import { leaderboardTable } from "./schema.js";
+import { eq, desc } from "drizzle-orm";
+
+export async function recordAnswer(
+  discordUserId: string,
+  username: string,
+  correct: boolean,
+  timeMs: number | null,
+): Promise<void> {
+  const existing = await db
+    .select()
+    .from(leaderboardTable)
+    .where(eq(leaderboardTable.discordUserId, discordUserId))
+    .limit(1);
+
+  if (existing.length === 0) {
+    await db.insert(leaderboardTable).values({
+      discordUserId,
+      username,
+      wins: 0,
+      totalAnswers: 1,
+      correctAnswers: correct ? 1 : 0,
+      bestTimeMs: correct && timeMs !== null ? timeMs : null,
+    });
+  } else {
+    const row = existing[0];
+    const newBest =
+      correct && timeMs !== null
+        ? row.bestTimeMs === null
+          ? timeMs
+          : Math.min(row.bestTimeMs, timeMs)
+        : row.bestTimeMs;
+
+    await db
+      .update(leaderboardTable)
+      .set({
+        username,
+        totalAnswers: row.totalAnswers + 1,
+        correctAnswers: row.correctAnswers + (correct ? 1 : 0),
+        bestTimeMs: newBest,
+        updatedAt: new Date(),
+      })
+      .where(eq(leaderboardTable.discordUserId, discordUserId));
+  }
+}
+
+export async function recordWin(discordUserId: string): Promise<void> {
+  const existing = await db
+    .select()
+    .from(leaderboardTable)
+    .where(eq(leaderboardTable.discordUserId, discordUserId))
+    .limit(1);
+
+  if (existing.length > 0) {
+    const row = existing[0];
+    await db
+      .update(leaderboardTable)
+      .set({ wins: row.wins + 1, updatedAt: new Date() })
+      .where(eq(leaderboardTable.discordUserId, discordUserId));
+  }
+}
+
+export async function getTopLeaderboard(limit = 10) {
+  return db
+    .select()
+    .from(leaderboardTable)
+    .orderBy(desc(leaderboardTable.wins), desc(leaderboardTable.correctAnswers))
+    .limit(limit);
+}
+=== src/register-commands.ts ===
+import { REST, Routes, SlashCommandBuilder } from "discord.js";
+
+const commands = [
+  new SlashCommandBuilder()
+    .setName("quiz")
+    .setDescription("Start a music quiz round! Join a voice channel first.")
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName("leaderboard")
+    .setDescription("Show the top players on the music quiz leaderboard.")
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName("skip")
+    .setDescription("Skip the current quiz round and reveal the answer.")
+    .toJSON(),
+];
+
+export async function registerCommands(): Promise<void> {
+  const token = process.env.DISCORD_TOKEN;
+  const clientId = process.env.DISCORD_CLIENT_ID;
+
+  if (!token || !clientId) {
+    throw new Error("DISCORD_TOKEN and DISCORD_CLIENT_ID must be set");
+  }
+
+  const rest = new REST({ version: "10" }).setToken(token);
+  await rest.put(Routes.applicationCommands(clientId), { body: commands });
+  console.log("[bot] Slash commands registered");
+}
+=== src/schema.ts ===
+import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
+
+export const leaderboardTable = pgTable("leaderboard", {
+  id: serial("id").primaryKey(),
+  discordUserId: text("discord_user_id").notNull(),
+  username: text("username").notNull(),
+  wins: integer("wins").notNull().default(0),
+  totalAnswers: integer("total_answers").notNull().default(0),
+  correctAnswers: integer("correct_answers").notNull().default(0),
+  bestTimeMs: integer("best_time_ms"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type LeaderboardEntry = typeof leaderboardTable.$inferSelect;
+=== src/songs.ts ===
+export interface SongEntry {
+  title: string;
+  artist: string;
+  youtubeUrl: string;
+}
+
+export const SONGS: SongEntry[] = [
+  { title: "Bohemian Rhapsody", artist: "Queen", youtubeUrl: "https://www.youtube.com/watch?v=fJ9rUzIMcZQ" },
+  { title: "Blinding Lights", artist: "The Weeknd", youtubeUrl: "https://www.youtube.com/watch?v=4NRXx6U8ABQ" },
+  { title: "Shape of You", artist: "Ed Sheeran", youtubeUrl: "https://www.youtube.com/watch?v=JGwWNGJdvx8" },
+  { title: "Uptown Funk", artist: "Mark Ronson ft. Bruno Mars", youtubeUrl: "https://www.youtube.com/watch?v=OPf0YbXqDm0" },
+  { title: "Rolling in the Deep", artist: "Adele", youtubeUrl: "https://www.youtube.com/watch?v=rYEDA3JcQqw" },
+  { title: "Stay With Me", artist: "Sam Smith", youtubeUrl: "https://www.youtube.com/watch?v=pB-5XG-DbAA" },
+  { title: "Bad Guy", artist: "Billie Eilish", youtubeUrl: "https://www.youtube.com/watch?v=DyDfgMOUjCI" },
+  { title: "Old Town Road", artist: "Lil Nas X", youtubeUrl: "https://www.youtube.com/watch?v=w2Ov5jzm3j8" },
+  { title: "Levitating", artist: "Dua Lipa", youtubeUrl: "https://www.youtube.com/watch?v=TUVcZfQe-Kw" },
+  { title: "Watermelon Sugar", artist: "Harry Styles", youtubeUrl: "https://www.youtube.com/watch?v=E07s5ZYygMg" },
+  { title: "Peaches", artist: "Justin Bieber", youtubeUrl: "https://www.youtube.com/watch?v=tQ0yjYUFKAE" },
+  { title: "drivers license", artist: "Olivia Rodrigo", youtubeUrl: "https://www.youtube.com/watch?v=ZmDBbnmKpqQ" },
+  { title: "Good 4 U", artist: "Olivia Rodrigo", youtubeUrl: "https://www.youtube.com/watch?v=gNi_6U5Pm_o" },
+  { title: "Stay", artist: "The Kid LAROI & Justin Bieber", youtubeUrl: "https://www.youtube.com/watch?v=kTJczUoc26U" },
+  { title: "As It Was", artist: "Harry Styles", youtubeUrl: "https://www.youtube.com/watch?v=H5v3kku4y6Q" },
+  { title: "Anti-Hero", artist: "Taylor Swift", youtubeUrl: "https://www.youtube.com/watch?v=b1kbLwvqugk" },
+  { title: "Flowers", artist: "Miley Cyrus", youtubeUrl: "https://www.youtube.com/watch?v=G7KNmW9a75Y" },
+  { title: "Cruel Summer", artist: "Taylor Swift", youtubeUrl: "https://www.youtube.com/watch?v=ic8j13piAhQ" },
+  { title: "Happier Than Ever", artist: "Billie Eilish", youtubeUrl: "https://www.youtube.com/watch?v=5GJWxDKyk3A" },
+  { title: "Montero", artist: "Lil Nas X", youtubeUrl: "https://www.youtube.com/watch?v=6swmTBVI83k" },
+];
+
+export function getRandomSong(): SongEntry {
+  return SONGS[Math.floor(Math.random() * SONGS.length)];
+}
+
+export function getWrongChoices(correct: SongEntry, count = 2): SongEntry[] {
+  const pool = SONGS.filter((s) => s.title !== correct.title);
+  const shuffled = pool.sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+=== src/bot.ts ===
 import {
   Client,
   GatewayIntentBits,
@@ -30,7 +244,7 @@ import { recordAnswer, recordWin, getTopLeaderboard } from "./leaderboard.js";
 import { registerCommands } from "./register-commands.js";
 
 const QUIZ_DURATION_MS = 10_000;
-const VOICE_CONNECT_TIMEOUT_MS = 5_000;
+const VOICE_CONNECT_TIMEOUT_MS = 30_000;
 const CHOICES = ["A", "B", "C"] as const;
 
 interface ActiveRound {
