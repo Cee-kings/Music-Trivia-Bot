@@ -22,7 +22,6 @@ import {
   getVoiceConnection,
   AudioPlayerStatus,
 } from "@discordjs/voice";
-import ytdl from "@distube/ytdl-core";
 import { spawn } from "child_process";
 import { getRandomSong, getWrongChoices, type SongEntry } from "./songs.js";
 import { recordAnswer, recordWin, getTopLeaderboard } from "./leaderboard.js";
@@ -89,7 +88,27 @@ export function createBot(): Client {
   return client;
 }
 
-// ── CHANGED: play-dl replaced with @distube/ytdl-core ──────────────────────
+function getStreamUrl(youtubeUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("yt-dlp", [
+      "--get-url",
+      "-f", "bestaudio",
+      "--no-playlist",
+      "--extractor-args", "youtube:player_client=tv,ios",
+      youtubeUrl,
+    ]);
+    let output = "";
+    proc.stdout.on("data", (d) => { output += d.toString(); });
+    proc.stderr.on("data", (d) => console.warn("[yt-dlp]", d.toString().trim()));
+    proc.on("error", reject);
+    proc.on("close", (code) => {
+      const url = output.trim().split("\n")[0];
+      if (code === 0 && url) resolve(url);
+      else reject(new Error(`yt-dlp exited with code ${code} — no URL returned`));
+    });
+  });
+}
+
 async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Promise<void> {
   const guildId = voiceChannel.guild.id;
   let connection;
@@ -103,30 +122,39 @@ async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Pr
     });
 
     await entersState(connection, VoiceConnectionStatus.Ready, VOICE_CONNECT_TIMEOUT_MS);
-    console.log("[voice] Connection ready — streaming audio");
+    console.log("[voice] Connection ready — fetching stream URL");
   } catch (err) {
-    console.warn("[voice] Could not reach Ready state:", (err as Error).message);
+    console.error("[voice] Could not reach Ready state:", (err as Error).message);
     connection?.destroy();
     return;
   }
 
   try {
-    const ytdlp = spawn("yt-dlp", [
-      "-f", "bestaudio",
-      "-o", "-",
-      "--no-playlist",
-      "--extractor-args", "youtube:player_client=tv,ios",
-      song.youtubeUrl,
+    const streamUrl = await getStreamUrl(song.youtubeUrl);
+    console.log("[voice] Got stream URL, starting ffmpeg");
+
+    const ffmpeg = spawn("ffmpeg", [
+      "-reconnect", "1",
+      "-reconnect_streamed", "1",
+      "-reconnect_delay_max", "5",
+      "-i", streamUrl,
+      "-f", "s16le",
+      "-ar", "48000",
+      "-ac", "2",
+      "pipe:1",
     ]);
 
-    ytdlp.stderr.on("data", (d) => console.warn("[yt-dlp stderr]", d.toString().trim()));
-    ytdlp.on("error", (err) => console.error("[yt-dlp] Failed to spawn:", err.message));
-    ytdlp.on("close", (code) => {
-      if (code !== 0) console.error(`[yt-dlp] Exited with code ${code}`);
+    ffmpeg.stderr.on("data", (d) => {
+      const msg = d.toString().trim();
+      if (msg) console.warn("[ffmpeg]", msg);
+    });
+    ffmpeg.on("error", (err) => console.error("[ffmpeg] Spawn error:", err.message));
+    ffmpeg.on("close", (code) => {
+      if (code !== 0) console.error(`[ffmpeg] Exited with code ${code}`);
     });
 
-    const resource = createAudioResource(ytdlp.stdout, {
-      inputType: StreamType.Arbitrary,
+    const resource = createAudioResource(ffmpeg.stdout, {
+      inputType: StreamType.Raw,
     });
 
     const player = createAudioPlayer();
@@ -139,7 +167,7 @@ async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Pr
     player.play(resource);
     console.log(`[voice] Now playing: ${song.title}`);
   } catch (err) {
-    console.warn("[voice] Stream error:", (err as Error).message);
+    console.error("[voice] Stream error:", (err as Error).message);
     connection.destroy();
   }
 }
@@ -176,6 +204,8 @@ function buildButtonRow(choices: SongEntry[]): ActionRowBuilder<ButtonBuilder> {
 }
 
 async function handleQuizCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (Date.now() - interaction.createdTimestamp > 2500) return;
+
   const guildId = interaction.guildId;
   if (!guildId) {
     await interaction.reply({ content: "❌ This command only works in a server.", ephemeral: true });
