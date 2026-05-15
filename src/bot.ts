@@ -92,12 +92,15 @@ export function createBot(): Client {
 
 function getStreamUrl(youtubeUrl: string): Promise<string> {
   return new Promise((resolve, reject) => {
+const cookieFile = process.env.YOUTUBE_COOKIE ? "/tmp/yc.txt" : null;
+    if (cookieFile) require("fs").writeFileSync(cookieFile, process.env.YOUTUBE_COOKIE!);
     const proc = spawn("yt-dlp", [
       "--get-url",
       "-f", "bestaudio",
       "--no-playlist",
       "--extractor-args", "youtube:player_client=tv,ios",
-      youtubeUrl,
+...(cookieFile ? ["--cookies", cookieFile] : []),
+youtubeUrl,
     ]);
     let output = "";
     proc.stdout.on("data", (d) => { output += d.toString(); });
