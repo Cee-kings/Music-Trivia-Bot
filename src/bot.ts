@@ -196,30 +196,29 @@ async function handleQuizCommand(interaction: ChatInputCommandInteraction): Prom
 
   const member = interaction.member as GuildMember;
   const voiceChannel = member?.voice?.channel as VoiceChannel | null;
-const voiceAttempted = voiceChannel !== null;
-if (voiceChannel) {
-  tryVoicePlayback(correctSong, voiceChannel).catch(err => {
-    console.error("[voice] Unexpected error:", err);
-  });
-}
+  const voiceAttempted = voiceChannel !== null;
 
-const embed = buildQuizEmbed(allChoices, correctSong.youtubeUrl, voiceAttempted);
-const row = buildButtonRow(allChoices);
-await interaction.editReply({ embeds: [embed], components: [row] });
+  const embed = buildQuizEmbed(allChoices, correctSong.youtubeUrl, voiceAttempted);
+  const row = buildButtonRow(allChoices);
+  await interaction.editReply({ embeds: [embed], components: [row] });
 
-const round: ActiveRound = {
-  correctSong,
-  choices: allChoices,
-  correctIndex,
-  startTime: Date.now(),
-  guildId,
-  responses: new Map(),
-  interaction,
-  timer: setTimeout(() => endRound(guildId), QUIZ_DURATION_MS),
-};
-  
-
+  const round: ActiveRound = {
+    correctSong,
+    choices: allChoices,
+    correctIndex,
+    startTime: Date.now(),
+    guildId,
+    responses: new Map(),
+    interaction,
+    timer: setTimeout(() => endRound(guildId), QUIZ_DURATION_MS),
+  };
   activeRounds.set(guildId, round);
+
+  if (voiceChannel) {
+    tryVoicePlayback(correctSong, voiceChannel).catch((err) => {
+      console.error("[voice] Unexpected error:", err);
+    });
+  }
 }
 
 async function handleButtonInteraction(interaction: ButtonInteraction): Promise<void> {
