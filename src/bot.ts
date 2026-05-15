@@ -23,6 +23,7 @@ import {
   AudioPlayerStatus,
 } from "@discordjs/voice";
 import ytdl from "@distube/ytdl-core";
+import { spawn } from "child_process";
 import { getRandomSong, getWrongChoices, type SongEntry } from "./songs.js";
 import { recordAnswer, recordWin, getTopLeaderboard } from "./leaderboard.js";
 import { registerCommands } from "./register-commands.js";
@@ -101,7 +102,6 @@ async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Pr
       selfDeaf: false,
     });
 
-    console.log(`[voice] Connecting to ${voiceChannel.name}…`);
     await entersState(connection, VoiceConnectionStatus.Ready, VOICE_CONNECT_TIMEOUT_MS);
     console.log("[voice] Connection ready — streaming audio");
   } catch (err) {
@@ -111,18 +111,21 @@ async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Pr
   }
 
   try {
-    const stream = ytdl(song.youtubeUrl, {
-      filter: "audioonly",
-      quality: "lowestaudio",
-      highWaterMark: 1 << 25,
-    });
+    const ytdlp = spawn("yt-dlp", [
+      "-f", "bestaudio",
+      "-o", "-",
+      "--no-playlist",
+      "--quiet",
+      song.youtubeUrl,
+    ]);
 
-    const resource = createAudioResource(stream, {
+    ytdlp.stderr.on("data", (d) => console.warn("[yt-dlp]", d.toString()));
+
+    const resource = createAudioResource(ytdlp.stdout, {
       inputType: StreamType.Arbitrary,
     });
 
     const player = createAudioPlayer();
-
     player.on("error", (err) => console.warn("[voice] Player error:", err.message));
     player.on(AudioPlayerStatus.Idle, () => {
       getVoiceConnection(guildId)?.destroy();
