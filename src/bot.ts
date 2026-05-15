@@ -22,6 +22,7 @@ import {
   entersState,
   getVoiceConnection,
   AudioPlayerStatus,
+  type VoiceConnection,
 } from "@discordjs/voice";
 import { spawn } from "child_process";
 import { getRandomSong, getWrongChoices, type SongEntry } from "./songs.js";
@@ -112,21 +113,33 @@ function getStreamUrl(youtubeUrl: string): Promise<string> {
 
 async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Promise<void> {
   const guildId = voiceChannel.guild.id;
-  let connection;
+  let connection: VoiceConnection;
+
+  // Clean up any lingering connection before joining fresh
+  const existing = getVoiceConnection(guildId);
+  if (existing) {
+    console.log("[voice] Destroying stale connection before rejoining");
+    try { existing.destroy(); } catch { /* already gone */ }
+    await new Promise(r => setTimeout(r, 500));
+  }
 
   try {
     connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId,
       adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-      selfDeaf: false,
+      selfDeaf: true,
+    });
+
+    connection.on("stateChange", (oldState, newState) => {
+      console.log(`[voice] ${oldState.status} → ${newState.status}`);
     });
 
     await entersState(connection, VoiceConnectionStatus.Ready, VOICE_CONNECT_TIMEOUT_MS);
     console.log("[voice] Connection ready — fetching stream URL");
   } catch (err) {
     console.error("[voice] Could not reach Ready state:", (err as Error).message);
-    connection?.destroy();
+    try { connection!.destroy(); } catch { /* already destroyed */ }
     return;
   }
 
@@ -290,12 +303,14 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
   });
 
   const isCorrect = choiceIndex === round.correctIndex;
-  await interaction.reply({
-    content: isCorrect
-      ? `✅ **Correct!** You answered in **${(timeMs / 1000).toFixed(2)}s**`
-      : `❌ **Wrong!** You chose **${CHOICES[choiceIndex]}**`,
-    ephemeral: true,
-  });
+  const content = isCorrect
+    ? `✅ **Correct!** You answered in **${(timeMs / 1000).toFixed(2)}s**`
+    : `❌ **Wrong!** You chose **${CHOICES[choiceIndex]}**`;
+  try {
+    await interaction.reply({ content, ephemeral: true });
+  } catch {
+    // Interaction expired — answer is already recorded, nothing else to do
+  }
 }
 
 async function endRound(guildId: string, skippedBy?: string): Promise<void> {
