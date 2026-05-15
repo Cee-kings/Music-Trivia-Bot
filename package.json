@@ -15,7 +15,7 @@
     "ffmpeg-static": "^5.2.0",
     "opusscript": "^0.1.1",
     "pg": "^8.20.0",
-    "play-dl": "^1.9.7"
+    "@distube/ytdl-core": "^4.16.10"
   },
   "devDependencies": {
     "@types/ffmpeg-static": "^3.0.3",
