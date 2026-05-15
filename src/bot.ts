@@ -16,12 +16,13 @@ import {
   joinVoiceChannel,
   createAudioPlayer,
   createAudioResource,
+  StreamType,
   VoiceConnectionStatus,
   entersState,
   getVoiceConnection,
   AudioPlayerStatus,
 } from "@discordjs/voice";
-import playdl from "play-dl";
+import ytdl from "@distube/ytdl-core";
 import { getRandomSong, getWrongChoices, type SongEntry } from "./songs.js";
 import { recordAnswer, recordWin, getTopLeaderboard } from "./leaderboard.js";
 import { registerCommands } from "./register-commands.js";
@@ -87,6 +88,7 @@ export function createBot(): Client {
   return client;
 }
 
+// ── CHANGED: play-dl replaced with @distube/ytdl-core ──────────────────────
 async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Promise<void> {
   const guildId = voiceChannel.guild.id;
   let connection;
@@ -109,8 +111,16 @@ async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Pr
   }
 
   try {
-    const playStream = await playdl.stream(song.youtubeUrl, { quality: 1 });
-    const resource = createAudioResource(playStream.stream, { inputType: playStream.type });
+    const stream = ytdl(song.youtubeUrl, {
+      filter: "audioonly",
+      quality: "lowestaudio",
+      highWaterMark: 1 << 25,
+    });
+
+    const resource = createAudioResource(stream, {
+      inputType: StreamType.Arbitrary,
+    });
+
     const player = createAudioPlayer();
 
     player.on("error", (err) => console.warn("[voice] Player error:", err.message));
@@ -126,6 +136,7 @@ async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Pr
     connection.destroy();
   }
 }
+// ───────────────────────────────────────────────────────────────────────────
 
 function buildQuizEmbed(choices: SongEntry[], songUrl: string, voiceAttempted: boolean): EmbedBuilder {
   const listenLine = voiceAttempted
@@ -348,4 +359,4 @@ async function handleLeaderboardCommand(interaction: ChatInputCommandInteraction
     .setFooter({ text: "Play with /quiz!" });
 
   await interaction.editReply({ embeds: [embed] });
-}
+    }
