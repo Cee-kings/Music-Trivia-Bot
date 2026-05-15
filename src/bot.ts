@@ -243,38 +243,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
   round.responses.set(userId, {
     username: interaction.user.displayName ?? interaction.user.username,
     choiceIndex,
-    timawait interaction.deferReply();
-
-const correctSong = getRandomSong();
-const wrongChoices = getWrongChoices(correctSong, 2);
-const allChoices = [...];
-const correctIndex = [...];
-
-const embed = buildQuizEmbed(...);
-const row = buildButtonRow(allChoices);
-
-// 1. Set the round FIRST
-const round: ActiveRound = {
-  correctSong,
-  choices: allChoices,
-  correctIndex,
-  startTime: Date.now(),
-  guildId,
-  responses: new Map(),
-  interaction,
-  timer: setTimeout(() => endRound(guildId), QUIZ_DURATION_MS),
-};
-activeRounds.set(guildId, round);
-
-// 2. Reply SECOND
-await interaction.editReply({ embeds: [embed], components: [row] });
-
-// 3. Voice LAST (fire and forget)
-if (voiceChannel) {
-  tryVoicePlayback(correctSong, voiceChannel).catch(err => {
-    console.error("[voice] Unexpected error:", err);
-  });
-}eMs,
+    timeMs,
   });
 
   const isCorrect = choiceIndex === round.correctIndex;
