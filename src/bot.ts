@@ -36,6 +36,7 @@ import {
   listSongs,
   getAllSongsAsEntries,
   getSongCount,
+  setAudioUrl,
 } from "./song-library.js";
 
 const QUIZ_DURATION_MS = 10_000;
@@ -84,6 +85,7 @@ export function createBot(): Client {
         else if (cmd.commandName === "removesong") await handleRemoveSongCommand(cmd);
         else if (cmd.commandName === "listsongs") await handleListSongsCommand(cmd);
         else if (cmd.commandName === "stats") await handleStatsCommand(cmd);
+        else if (cmd.commandName === "uploadsong") await handleUploadSongCommand(cmd);
       } else if (interaction.isButton()) {
         await handleButtonInteraction(interaction as ButtonInteraction);
       }
@@ -125,6 +127,13 @@ async function pickSongWithPreview(maxAttempts = 5): Promise<{ song: SongEntry; 
 
   for (let i = 0; i < maxAttempts; i++) {
     const song = getRandomSong(pool);
+
+    // Use uploaded audio directly — no Deezer needed
+    if (song.audioUrl) {
+      return { song, previewUrl: song.audioUrl };
+    }
+
+    // Fall back to Deezer preview
     const previewUrl = await getDeezerPreviewUrl(song);
     if (previewUrl) {
       return { song, previewUrl };
@@ -546,4 +555,29 @@ async function handleStatsCommand(interaction: ChatInputCommandInteraction): Pro
     .setFooter({ text: "Play more rounds with /quiz!" });
 
   await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleUploadSongCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const attachment = interaction.options.getAttachment("file", true);
+  const title = interaction.options.getString("title", true).trim();
+  const artist = interaction.options.getString("artist", true).trim();
+  const url = interaction.options.getString("url")?.trim() ?? "";
+  const addedBy = interaction.user.displayName ?? interaction.user.username;
+
+  await interaction.deferReply({ ephemeral: true });
+
+  const contentType = attachment.contentType ?? "";
+  if (!contentType.startsWith("audio/") && !attachment.name.match(/\.(mp3|ogg|wav|flac|m4a|aac)$/i)) {
+    await interaction.editReply("❌ Please attach an audio file (MP3, OGG, WAV, FLAC, M4A, or AAC).");
+    return;
+  }
+
+  await addSong(title, artist, url, addedBy, attachment.url);
+  const count = await getSongCount();
+
+  await interaction.editReply(
+    `✅ **${title}** by **${artist}** added with your uploaded audio!\n` +
+    `🎵 This song will use your file for playback — no Deezer needed.\n` +
+    `📚 Library now has **${count}** song${count === 1 ? "" : "s"}.`,
+  );
 }

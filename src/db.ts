@@ -32,9 +32,14 @@ export async function migrateDb(): Promise<void> {
       title       TEXT      NOT NULL,
       artist      TEXT      NOT NULL,
       youtube_url TEXT      NOT NULL DEFAULT '',
+      audio_url   TEXT,
       added_by    TEXT      NOT NULL,
       added_at    TIMESTAMP NOT NULL DEFAULT NOW()
     );
+  `);
+  // Add audio_url column if it was added after initial deployment
+  await pool.query(`
+    ALTER TABLE song_library ADD COLUMN IF NOT EXISTS audio_url TEXT;
   `);
   console.log("[db] Tables ready");
 }

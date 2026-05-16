@@ -18,6 +18,7 @@ export const songLibraryTable = pgTable("song_library", {
   title: text("title").notNull(),
   artist: text("artist").notNull(),
   youtubeUrl: text("youtube_url").notNull().default(""),
+  audioUrl: text("audio_url"),
   addedBy: text("added_by").notNull(),
   addedAt: timestamp("added_at").defaultNow().notNull(),
 });

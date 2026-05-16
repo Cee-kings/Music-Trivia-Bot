@@ -2,6 +2,7 @@ export interface SongEntry {
   title: string;
   artist: string;
   youtubeUrl: string;
+  audioUrl?: string;
 }
 
 export const SONGS: SongEntry[] = [

@@ -8,8 +8,9 @@ export async function addSong(
   artist: string,
   youtubeUrl: string,
   addedBy: string,
+  audioUrl?: string,
 ): Promise<void> {
-  await db.insert(songLibraryTable).values({ title, artist, youtubeUrl, addedBy });
+  await db.insert(songLibraryTable).values({ title, artist, youtubeUrl, addedBy, audioUrl: audioUrl ?? null });
 }
 
 export async function removeSong(id: number): Promise<boolean> {
@@ -31,7 +32,16 @@ export async function getSongCount(): Promise<number> {
 
 export async function getAllSongsAsEntries(): Promise<SongEntry[]> {
   const rows = await db.select().from(songLibraryTable);
-  return rows.map((r) => ({ title: r.title, artist: r.artist, youtubeUrl: r.youtubeUrl }));
+  return rows.map((r) => ({
+    title: r.title,
+    artist: r.artist,
+    youtubeUrl: r.youtubeUrl,
+    audioUrl: r.audioUrl ?? undefined,
+  }));
+}
+
+export async function setAudioUrl(id: number, audioUrl: string): Promise<void> {
+  await db.update(songLibraryTable).set({ audioUrl }).where(eq(songLibraryTable.id, id));
 }
 
 export async function findSongByTitleArtist(

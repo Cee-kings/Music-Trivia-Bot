@@ -44,6 +44,22 @@ const commands = [
       o.setName("player").setDescription("The player to look up (defaults to you)").setRequired(false),
     )
     .toJSON(),
+  new SlashCommandBuilder()
+    .setName("uploadsong")
+    .setDescription("Upload an audio file from your library as a quiz song.")
+    .addAttachmentOption((o) =>
+      o.setName("file").setDescription("MP3 or audio file to use for playback").setRequired(true),
+    )
+    .addStringOption((o) =>
+      o.setName("title").setDescription("Song title").setRequired(true),
+    )
+    .addStringOption((o) =>
+      o.setName("artist").setDescription("Artist name").setRequired(true),
+    )
+    .addStringOption((o) =>
+      o.setName("url").setDescription("YouTube URL (optional)").setRequired(false),
+    )
+    .toJSON(),
 ];
 
 export async function registerCommands(): Promise<void> {
