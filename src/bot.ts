@@ -95,12 +95,14 @@ export function createBot(): Client {
 async function getDeezerPreviewUrl(song: SongEntry): Promise<string | null> {
   try {
     const query = encodeURIComponent(song.title + " " + song.artist);
-    const res = await fetch("https://api.deezer.com/search?q=" + query + "&limit=1");
+    const res = await fetch("https://api.deezer.com/search?q=" + query + "&limit=5");
     const data = await res.json() as any;
     if (!data.data || data.data.length === 0) return null;
-    const preview = data.data[0].preview;
-    if (!preview) return null;
-    return preview;
+    // Take the first result that actually has a non-empty preview URL
+    for (const track of data.data) {
+      if (track.preview) return track.preview as string;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -228,8 +230,6 @@ function buildButtonRow(choices: SongEntry[]): ActionRowBuilder<ButtonBuilder> {
 }
 
 async function handleQuizCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-  if (Date.now() - interaction.createdTimestamp > 2500) return;
-
   const guildId = interaction.guildId;
   if (!guildId) {
     await interaction.reply({ content: "❌ This command only works in a server.", ephemeral: true });
@@ -241,9 +241,12 @@ async function handleQuizCommand(interaction: ChatInputCommandInteraction): Prom
     return;
   }
 
+  // Acknowledge immediately so Discord doesn't time out the interaction (3s limit)
+  await interaction.deferReply();
+
   const picked = await pickSongWithPreview(5);
   if (!picked) {
-    await interaction.reply({ content: "❌ Couldn't find a song with an audio preview right now — please try again!", ephemeral: true });
+    await interaction.editReply({ content: "❌ Couldn't find a song with an audio preview right now — please try again!" });
     return;
   }
   const { song: correctSong, previewUrl } = picked;
@@ -259,17 +262,7 @@ async function handleQuizCommand(interaction: ChatInputCommandInteraction): Prom
   const embed = buildQuizEmbed(allChoices, correctSong.youtubeUrl, voiceAttempted);
   const row = buildButtonRow(allChoices);
 
-  let message: Message;
-  try {
-    message = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
-  } catch {
-    if (!interaction.channel?.isTextBased()) {
-      console.error("[quiz] Interaction expired and no text channel available");
-      return;
-    }
-    console.warn("[quiz] Interaction expired — falling back to channel.send()");
-    message = await interaction.channel.send({ embeds: [embed], components: [row] });
-  }
+  const message = await interaction.editReply({ embeds: [embed], components: [row] });
 
   const round: ActiveRound = {
     correctSong,
@@ -278,7 +271,7 @@ async function handleQuizCommand(interaction: ChatInputCommandInteraction): Prom
     startTime: Date.now(),
     guildId,
     responses: new Map(),
-    message,
+    message: message as Message,
     timer: setTimeout(() => endRound(guildId), QUIZ_DURATION_MS),
   };
   activeRounds.set(guildId, round);
