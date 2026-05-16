@@ -94,7 +94,16 @@ export function createBot(): Client {
 function getStreamUrl(youtubeUrl: string): Promise<string> {
   return new Promise((resolve, reject) => {
 const cookieFile = process.env.YOUTUBE_COOKIE ? "/tmp/yc.txt" : null;
-    if (cookieFile) writeFileSync(cookieFile, process.env.YOUTUBE_COOKIE!);
+    if (cookieFile) {
+  let cookie = process.env.YOUTUBE_COOKIE!;
+  if (!cookie.includes("Netscape")) {
+    cookie = "# Netscape HTTP Cookie File\n" + cookie.split(";").map(p => {
+      const [n, ...v] = p.trim().split("=");
+      return `.youtube.com\tTRUE\t/\tFALSE\t0\t${n.trim()}\t${v.join("=").trim()}`;
+    }).join("\n");
+  }
+  writeFileSync(cookieFile, cookie);
+    }
     
     const proc = spawn("yt-dlp", [
       "--get-url",
