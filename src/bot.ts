@@ -29,7 +29,7 @@ import { recordAnswer, recordWin, getTopLeaderboard } from "./leaderboard.js";
 import { registerCommands } from "./register-commands.js";
 
 const QUIZ_DURATION_MS = 10_000;
-const VOICE_CONNECT_TIMEOUT_MS = 5_000;
+const VOICE_CONNECT_TIMEOUT_MS = 30_000;
 const CHOICES = ["A", "B", "C"] as const;
 
 interface ActiveRound {
@@ -121,6 +121,19 @@ async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Pr
 
     connection.on("stateChange", (oldState, newState) => {
       console.log(`[voice] ${oldState.status} → ${newState.status}`);
+    });
+
+    connection.on(VoiceConnectionStatus.Disconnected, async () => {
+      try {
+        // If it moves back to Signalling or Connecting within 5s it's rejoining — wait for it
+        await Promise.race([
+          entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+          entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+        ]);
+      } catch {
+        // Didn't recover — clean up
+        try { connection.destroy(); } catch { /* already gone */ }
+      }
     });
 
     await entersState(connection, VoiceConnectionStatus.Ready, VOICE_CONNECT_TIMEOUT_MS);
