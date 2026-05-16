@@ -32,7 +32,7 @@ import { recordAnswer, recordWin, getTopLeaderboard } from "./leaderboard.js";
 import { registerCommands } from "./register-commands.js";
 
 const QUIZ_DURATION_MS = 10_000;
-const VOICE_CONNECT_TIMEOUT_MS = 30_000;
+const VOICE_CONNECT_TIMEOUT_MS = 6_000;
 const CHOICES = ["A", "B", "C"] as const;
 
 interface ActiveRound {
@@ -118,50 +118,41 @@ async function pickSongWithPreview(maxAttempts = 5): Promise<{ song: SongEntry; 
   return null;
 }
 
+function destroyVoiceConnection(guildId: string): void {
+  try { getVoiceConnection(guildId)?.destroy(); } catch { /* already gone */ }
+}
+
 async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel, previewUrl: string): Promise<void> {
   const guildId = voiceChannel.guild.id;
-  let connection: VoiceConnection;
 
-  // Clean up any lingering connection before joining fresh
-  const existing = getVoiceConnection(guildId);
-  if (existing) {
-    console.log("[voice] Destroying stale connection before rejoining");
-    try { existing.destroy(); } catch { /* already gone */ }
-    await new Promise(r => setTimeout(r, 500));
-  }
+  // Destroy any stale connection immediately — no delay needed
+  destroyVoiceConnection(guildId);
 
+  let connection: VoiceConnection | undefined;
   try {
     connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId,
       adapterCreator: voiceChannel.guild.voiceAdapterCreator,
       selfDeaf: true,
+      selfMute: false,
     });
 
+    // Destroy immediately on disconnect — this is a one-shot playback, no reconnect needed
+    connection.on(VoiceConnectionStatus.Disconnected, () => {
+      destroyVoiceConnection(guildId);
+    });
+
+    const NOISY_STATES = new Set([VoiceConnectionStatus.Connecting, VoiceConnectionStatus.Signalling]);
     connection.on("stateChange", (oldState, newState) => {
+      if (NOISY_STATES.has(oldState.status as VoiceConnectionStatus) && NOISY_STATES.has(newState.status as VoiceConnectionStatus)) return;
       console.log(`[voice] ${oldState.status} → ${newState.status}`);
     });
 
-    connection.on(VoiceConnectionStatus.Disconnected, async () => {
-      try {
-        // If it moves back to Signalling or Connecting within 5s it's rejoining — wait for it
-        await Promise.race([
-          entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
-          entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
-        ]);
-      } catch {
-        // Didn't recover — clean up
-        try { connection.destroy(); } catch { /* already gone */ }
-      }
-    });
-
     await entersState(connection, VoiceConnectionStatus.Ready, VOICE_CONNECT_TIMEOUT_MS);
-    console.log("[voice] Connection ready — fetching audio stream");
+    console.log("[voice] Connection ready — starting playback");
 
-    const streamUrl = previewUrl;
-    console.log("[voice] Got stream URL, piping through ffmpeg");
-
-    const response = await fetch(streamUrl);
+    const response = await fetch(previewUrl);
     if (!response.ok) throw new Error(`Deezer fetch failed: ${response.status}`);
     const mp3Stream = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]);
 
@@ -181,22 +172,20 @@ async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel, pre
     ffmpeg.stdin.on("error", () => { /* ignore EPIPE when player stops early */ });
     mp3Stream.pipe(ffmpeg.stdin);
 
-    const resource = createAudioResource(ffmpeg.stdout, {
-      inputType: StreamType.Raw,
-    });
+    const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw });
 
     const player = createAudioPlayer();
     player.on("error", (err) => console.error("[voice] Player error:", err.message));
     player.on(AudioPlayerStatus.Idle, () => {
-      getVoiceConnection(guildId)?.destroy();
+      destroyVoiceConnection(guildId);
     });
 
     connection.subscribe(player);
     player.play(resource);
     console.log(`[voice] Now playing: ${song.title}`);
   } catch (err) {
-    console.error("[voice] Stream error:", (err as Error).message);
-    try { connection!.destroy(); } catch { /* already destroyed */ }
+    console.error("[voice] Playback failed:", (err as Error).message);
+    if (connection) destroyVoiceConnection(guildId);
   }
 }
 // ───────────────────────────────────────────────────────────────────────────
