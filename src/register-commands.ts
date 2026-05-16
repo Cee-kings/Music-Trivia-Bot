@@ -45,6 +45,10 @@ const commands = [
     )
     .toJSON(),
   new SlashCommandBuilder()
+    .setName("help")
+    .setDescription("Show all available bot commands.")
+    .toJSON(),
+  new SlashCommandBuilder()
     .setName("uploadsong")
     .setDescription("Upload an audio file from your library as a quiz song.")
     .addAttachmentOption((o) =>

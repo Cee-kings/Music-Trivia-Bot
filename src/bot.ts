@@ -86,6 +86,7 @@ export function createBot(): Client {
         else if (cmd.commandName === "listsongs") await handleListSongsCommand(cmd);
         else if (cmd.commandName === "stats") await handleStatsCommand(cmd);
         else if (cmd.commandName === "uploadsong") await handleUploadSongCommand(cmd);
+        else if (cmd.commandName === "help") await handleHelpCommand(cmd);
       } else if (interaction.isButton()) {
         await handleButtonInteraction(interaction as ButtonInteraction);
       }
@@ -555,6 +556,49 @@ async function handleStatsCommand(interaction: ChatInputCommandInteraction): Pro
     .setFooter({ text: "Play more rounds with /quiz!" });
 
   await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleHelpCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle("🎵 Music Trivia Bot — Commands")
+    .addFields(
+      {
+        name: "🎮 Playing",
+        value: [
+          "`/quiz` — Start a music quiz round (join a voice channel first!)",
+          "`/skip` — Skip the current round and reveal the answer",
+        ].join("\n"),
+      },
+      {
+        name: "📚 Song Library",
+        value: [
+          "`/addsong title: … artist: …` — Add a song (Deezer finds the audio)",
+          "`/uploadsong title: … artist: …` + attach file — Add a song with your own audio file (MP3, OGG, WAV, etc.)",
+          "`/removesong id: …` — Remove a song by its ID",
+          "`/listsongs` — View all songs in your custom library",
+        ].join("\n"),
+      },
+      {
+        name: "🏆 Stats",
+        value: [
+          "`/leaderboard` — Top 10 players",
+          "`/stats` — Your personal stats",
+          "`/stats player: @someone` — Look up another player's stats",
+        ].join("\n"),
+      },
+      {
+        name: "💡 Tips",
+        value: [
+          "• The bot uses your custom library once you have **3+ songs** added",
+          "• Songs with uploaded files use your audio — others fall back to Deezer",
+          "• Fastest correct answer wins the round!",
+        ].join("\n"),
+      },
+    )
+    .setFooter({ text: "Good luck! 🎶" });
+
+  await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
 async function handleUploadSongCommand(interaction: ChatInputCommandInteraction): Promise<void> {
