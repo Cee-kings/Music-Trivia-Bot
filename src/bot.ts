@@ -91,37 +91,14 @@ export function createBot(): Client {
   return client;
 }
 
-function getStreamUrl(youtubeUrl: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-const cookieFile = process.env.YOUTUBE_COOKIE ? "/tmp/yc.txt" : null;
-    if (cookieFile) {
-  let cookie = process.env.YOUTUBE_COOKIE!;
-  if (!cookie.includes("Netscape")) {
-    cookie = "# Netscape HTTP Cookie File\n" + cookie.split(";").map(p => {
-      const [n, ...v] = p.trim().split("=");
-      return `.youtube.com\tTRUE\t/\tFALSE\t0\t${n.trim()}\t${v.join("=").trim()}`;
-    }).join("\n");
-  }
-  writeFileSync(cookieFile, cookie);
-    }
-    
-    const proc = spawn("yt-dlp", [
-      "--get-url",
-      "-f", "bestaudio",
-      "--extractor-args", "youtube:player_client=tv",
-...(cookieFile ? ["--cookies", cookieFile] : []),
-youtubeUrl,
-    ]);
-    let output = "";
-    proc.stdout.on("data", (d) => { output += d.toString(); });
-    proc.stderr.on("data", (d) => console.warn("[yt-dlp]", d.toString().trim()));
-    proc.on("error", reject);
-    proc.on("close", (code) => {
-      const url = output.trim().split("\n")[0];
-      if (code === 0 && url) resolve(url);
-      else reject(new Error(`yt-dlp exited with code ${code} — no URL returned`));
-    });
-  });
+async function getStreamUrl(song: SongEntry): Promise<string> {
+  const query = encodeURIComponent(song.title + " " + song.artist);
+  const res = await fetch("https://api.deezer.com/search?q=" + query + "&limit=1");
+  const data = await res.json() as any;
+  if (!data.data || data.data.length === 0) throw new Error("No Deezer results");
+  const preview = data.data[0].preview;
+  if (!preview) throw new Error("No preview URL");
+  return preview;
 }
 
 async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Promise<void> {
@@ -145,43 +122,11 @@ async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Pr
     });
 
     connection.on("stateChange", (oldState, newState) => {
-      console.log(`[voice] ${oldState.status} → ${newState.status}`);
-    });
+  console.log(`[voice] ${oldState.status} → ${newState.status}`);
+});
 
-    await entersState(connection, VoiceConnectionStatus.Ready, VOICE_CONNECT_TIMEOUT_MS);
-    console.log("[voice] Connection ready — fetching stream URL");
-  } catch (err) {
-    console.error("[voice] Could not reach Ready state:", (err as Error).message);
-    try { connection!.destroy(); } catch { /* already destroyed */ }
-    return;
-  }
-
-  try {
-    const streamUrl = await getStreamUrl(song.youtubeUrl);
-    console.log("[voice] Got stream URL, starting ffmpeg");
-
-    const ffmpeg = spawn("ffmpeg", [
-      "-reconnect", "1",
-      "-reconnect_streamed", "1",
-      "-reconnect_delay_max", "5",
-      "-i", streamUrl,
-      "-f", "s16le",
-      "-ar", "48000",
-      "-ac", "2",
-      "pipe:1",
-    ]);
-
-    ffmpeg.stderr.on("data", (d) => {
-      const msg = d.toString().trim();
-      if (msg) console.warn("[ffmpeg]", msg);
-    });
-    ffmpeg.on("error", (err) => console.error("[ffmpeg] Spawn error:", err.message));
-    ffmpeg.on("close", (code) => {
-      if (code !== 0) console.error(`[ffmpeg] Exited with code ${code}`);
-    });
-
-    const resource = createAudioResource(ffmpeg.stdout, {
-      inputType: StreamType.Raw,
+    const resource = createAudioResource(streamUrl, {
+      inputType: StreamType.Arbitrary,
     });
 
     const player = createAudioPlayer();
