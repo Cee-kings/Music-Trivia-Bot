@@ -25,6 +25,7 @@ import {
   type VoiceConnection,
 } from "@discordjs/voice";
 import { spawn } from "child_process";
+import { Readable } from "stream";
 import ffmpegPath from "ffmpeg-static";
 import { getRandomSong, getWrongChoices, type SongEntry } from "./songs.js";
 import { recordAnswer, recordWin, getTopLeaderboard } from "./leaderboard.js";
@@ -142,23 +143,27 @@ async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel): Pr
     console.log("[voice] Connection ready — fetching stream URL");
 
     const streamUrl = await getDeezerPreviewUrl(song);
-    console.log("[voice] Got stream URL, starting ffmpeg");
+    console.log("[voice] Got stream URL, piping through ffmpeg");
+
+    const response = await fetch(streamUrl);
+    if (!response.ok) throw new Error(`Deezer fetch failed: ${response.status}`);
+    const mp3Stream = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]);
 
     const ffmpeg = spawn(ffmpegPath!, [
-      "-reconnect", "1",
-      "-reconnect_streamed", "1",
-      "-reconnect_delay_max", "5",
-      "-i", streamUrl,
+      "-f", "mp3",
+      "-i", "pipe:0",
       "-f", "s16le",
       "-ar", "48000",
       "-ac", "2",
       "pipe:1",
     ]);
+    ffmpeg.on("error", (err: Error) => console.error("[ffmpeg] Spawn error:", err.message));
     ffmpeg.stderr.on("data", (d: Buffer) => {
       const msg = d.toString().trim();
       if (msg) console.warn("[ffmpeg]", msg);
     });
-    ffmpeg.on("error", (err: Error) => console.error("[ffmpeg] Spawn error:", err.message));
+    ffmpeg.stdin.on("error", () => { /* ignore EPIPE when player stops early */ });
+    mp3Stream.pipe(ffmpeg.stdin);
 
     const resource = createAudioResource(ffmpeg.stdout, {
       inputType: StreamType.Raw,
