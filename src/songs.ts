@@ -27,12 +27,11 @@ export const SONGS: SongEntry[] = [
   { title: "Montero", artist: "Lil Nas X", youtubeUrl: "https://www.youtube.com/watch?v=6swmTBVI83k" },
 ];
 
-export function getRandomSong(): SongEntry {
-  return SONGS[Math.floor(Math.random() * SONGS.length)];
+export function getRandomSong(pool: SongEntry[] = SONGS): SongEntry {
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
-export function getWrongChoices(correct: SongEntry, count = 2): SongEntry[] {
-  const pool = SONGS.filter((s) => s.title !== correct.title);
-  const shuffled = pool.sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
+export function getWrongChoices(correct: SongEntry, count = 2, pool: SongEntry[] = SONGS): SongEntry[] {
+  const others = pool.filter((s) => s.title !== correct.title);
+  return others.sort(() => Math.random() - 0.5).slice(0, count);
 }

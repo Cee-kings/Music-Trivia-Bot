@@ -27,9 +27,16 @@ import {
 import { spawn } from "child_process";
 import { Readable } from "stream";
 import ffmpegPath from "ffmpeg-static";
-import { getRandomSong, getWrongChoices, type SongEntry } from "./songs.js";
+import { getRandomSong, getWrongChoices, type SongEntry, SONGS } from "./songs.js";
 import { recordAnswer, recordWin, getTopLeaderboard } from "./leaderboard.js";
 import { registerCommands } from "./register-commands.js";
+import {
+  addSong,
+  removeSong,
+  listSongs,
+  getAllSongsAsEntries,
+  getSongCount,
+} from "./song-library.js";
 
 const QUIZ_DURATION_MS = 10_000;
 const VOICE_CONNECT_TIMEOUT_MS = 15_000;
@@ -73,6 +80,9 @@ export function createBot(): Client {
         if (cmd.commandName === "quiz") await handleQuizCommand(cmd);
         else if (cmd.commandName === "leaderboard") await handleLeaderboardCommand(cmd);
         else if (cmd.commandName === "skip") await handleSkipCommand(cmd);
+        else if (cmd.commandName === "addsong") await handleAddSongCommand(cmd);
+        else if (cmd.commandName === "removesong") await handleRemoveSongCommand(cmd);
+        else if (cmd.commandName === "listsongs") await handleListSongsCommand(cmd);
       } else if (interaction.isButton()) {
         await handleButtonInteraction(interaction as ButtonInteraction);
       }
@@ -109,8 +119,11 @@ async function getDeezerPreviewUrl(song: SongEntry): Promise<string | null> {
 }
 
 async function pickSongWithPreview(maxAttempts = 5): Promise<{ song: SongEntry; previewUrl: string } | null> {
+  const customSongs = await getAllSongsAsEntries();
+  const pool = customSongs.length >= 3 ? customSongs : SONGS;
+
   for (let i = 0; i < maxAttempts; i++) {
-    const song = getRandomSong();
+    const song = getRandomSong(pool);
     const previewUrl = await getDeezerPreviewUrl(song);
     if (previewUrl) {
       return { song, previewUrl };
@@ -427,6 +440,68 @@ async function handleLeaderboardCommand(interaction: ChatInputCommandInteraction
     .setDescription(rows.join("\n"))
     .setTimestamp()
     .setFooter({ text: "Play with /quiz!" });
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleAddSongCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const title = interaction.options.getString("title", true).trim();
+  const artist = interaction.options.getString("artist", true).trim();
+  const url = interaction.options.getString("url")?.trim() ?? "";
+  const addedBy = interaction.user.displayName ?? interaction.user.username;
+
+  await interaction.deferReply({ ephemeral: true });
+
+  await addSong(title, artist, url, addedBy);
+  const count = await getSongCount();
+
+  await interaction.editReply(
+    `✅ **${title}** by **${artist}** added to the song library! (${count} songs total)\n` +
+    (url ? `🔗 ${url}` : "_No YouTube URL provided — Deezer will be used for the audio preview._"),
+  );
+}
+
+async function handleRemoveSongCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const id = interaction.options.getInteger("id", true);
+
+  await interaction.deferReply({ ephemeral: true });
+
+  const removed = await removeSong(id);
+  if (removed) {
+    const count = await getSongCount();
+    await interaction.editReply(`🗑️ Song #${id} removed from the library. (${count} songs remaining)`);
+  } else {
+    await interaction.editReply(`❌ No song with ID **${id}** found. Use \`/listsongs\` to see valid IDs.`);
+  }
+}
+
+async function handleListSongsCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  await interaction.deferReply({ ephemeral: true });
+
+  const songs = await listSongs();
+
+  if (songs.length === 0) {
+    await interaction.editReply(
+      "📭 Your custom library is empty.\nUse `/addsong` to add songs — the bot will use the built-in list until you have at least 3.",
+    );
+    return;
+  }
+
+  const PAGE_SIZE = 20;
+  const lines = songs.map(
+    (s) => `\`#${s.id}\` **${s.title}** — *${s.artist}*${s.youtubeUrl ? ` 🔗` : ""}`,
+  );
+
+  const pages: string[] = [];
+  for (let i = 0; i < lines.length; i += PAGE_SIZE) {
+    pages.push(lines.slice(i, i + PAGE_SIZE).join("\n"));
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle(`🎵 Custom Song Library (${songs.length} songs)`)
+    .setDescription(pages[0])
+    .setFooter({ text: pages.length > 1 ? `Showing 1–${Math.min(PAGE_SIZE, songs.length)} of ${songs.length}` : `${songs.length} song${songs.length === 1 ? "" : "s"} · Use /addsong or /removesong to manage` });
 
   await interaction.editReply({ embeds: [embed] });
 }

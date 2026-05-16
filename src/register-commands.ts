@@ -13,6 +13,30 @@ const commands = [
     .setName("skip")
     .setDescription("Skip the current quiz round and reveal the answer.")
     .toJSON(),
+  new SlashCommandBuilder()
+    .setName("addsong")
+    .setDescription("Add a song to the custom quiz library.")
+    .addStringOption((o) =>
+      o.setName("title").setDescription("Song title").setRequired(true),
+    )
+    .addStringOption((o) =>
+      o.setName("artist").setDescription("Artist name").setRequired(true),
+    )
+    .addStringOption((o) =>
+      o.setName("url").setDescription("YouTube URL (optional)").setRequired(false),
+    )
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName("removesong")
+    .setDescription("Remove a song from the custom quiz library by its ID.")
+    .addIntegerOption((o) =>
+      o.setName("id").setDescription("Song ID from /listsongs").setRequired(true),
+    )
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName("listsongs")
+    .setDescription("List all songs in the custom quiz library.")
+    .toJSON(),
 ];
 
 export async function registerCommands(): Promise<void> {

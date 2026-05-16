@@ -27,6 +27,14 @@ export async function migrateDb(): Promise<void> {
       best_time_ms     INTEGER,
       updated_at       TIMESTAMP NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS song_library (
+      id          SERIAL PRIMARY KEY,
+      title       TEXT      NOT NULL,
+      artist      TEXT      NOT NULL,
+      youtube_url TEXT      NOT NULL DEFAULT '',
+      added_by    TEXT      NOT NULL,
+      added_at    TIMESTAMP NOT NULL DEFAULT NOW()
+    );
   `);
   console.log("[db] Tables ready");
 }

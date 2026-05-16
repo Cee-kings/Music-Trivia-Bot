@@ -12,3 +12,14 @@ export const leaderboardTable = pgTable("leaderboard", {
 });
 
 export type LeaderboardEntry = typeof leaderboardTable.$inferSelect;
+
+export const songLibraryTable = pgTable("song_library", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  artist: text("artist").notNull(),
+  youtubeUrl: text("youtube_url").notNull().default(""),
+  addedBy: text("added_by").notNull(),
+  addedAt: timestamp("added_at").defaultNow().notNull(),
+});
+
+export type SongLibraryEntry = typeof songLibraryTable.$inferSelect;
