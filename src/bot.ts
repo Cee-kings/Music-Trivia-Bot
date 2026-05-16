@@ -455,7 +455,26 @@ async function handleLeaderboardCommand(interaction: ChatInputCommandInteraction
   await interaction.editReply({ embeds: [embed] });
 }
 
+function hasModeratorRole(interaction: ChatInputCommandInteraction): boolean {
+  const member = interaction.member;
+  if (!member || !("roles" in member)) return false;
+  const roles = member.roles;
+  if (Array.isArray(roles)) {
+    return roles.some((r) => typeof r === "string");
+  }
+  return roles.cache.some((r) => r.name.toLowerCase() === "moderator");
+}
+
+async function replyNoPermission(interaction: ChatInputCommandInteraction): Promise<void> {
+  await interaction.reply({
+    content: "🚫 You don't have permission to use this command. The **Moderator** role is required.",
+    ephemeral: true,
+  });
+}
+
 async function handleAddSongCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!hasModeratorRole(interaction)) { await replyNoPermission(interaction); return; }
+
   const title = interaction.options.getString("title", true).trim();
   const artist = interaction.options.getString("artist", true).trim();
   const url = interaction.options.getString("url")?.trim() ?? "";
@@ -473,6 +492,8 @@ async function handleAddSongCommand(interaction: ChatInputCommandInteraction): P
 }
 
 async function handleRemoveSongCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!hasModeratorRole(interaction)) { await replyNoPermission(interaction); return; }
+
   const id = interaction.options.getInteger("id", true);
 
   await interaction.deferReply({ ephemeral: true });
@@ -487,6 +508,8 @@ async function handleRemoveSongCommand(interaction: ChatInputCommandInteraction)
 }
 
 async function handleListSongsCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!hasModeratorRole(interaction)) { await replyNoPermission(interaction); return; }
+
   await interaction.deferReply({ ephemeral: true });
 
   const songs = await listSongs();
@@ -602,6 +625,8 @@ async function handleHelpCommand(interaction: ChatInputCommandInteraction): Prom
 }
 
 async function handleUploadSongCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!hasModeratorRole(interaction)) { await replyNoPermission(interaction); return; }
+
   const attachment = interaction.options.getAttachment("file", true);
   const title = interaction.options.getString("title", true).trim();
   const artist = interaction.options.getString("artist", true).trim();
