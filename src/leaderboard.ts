@@ -77,3 +77,9 @@ export async function getPlayerStats(discordUserId: string) {
     .limit(1);
   return rows.length > 0 ? rows[0] : null;
 }
+
+export async function resetLeaderboard(): Promise<number> {
+  const rows = await db.select().from(leaderboardTable);
+  await db.delete(leaderboardTable);
+  return rows.length;
+}

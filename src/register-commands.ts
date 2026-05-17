@@ -49,6 +49,10 @@ const commands = [
     .setDescription("Show all available bot commands.")
     .toJSON(),
   new SlashCommandBuilder()
+    .setName("resetleaderboard")
+    .setDescription("Wipe all quiz stats and leaderboard entries for this server. Staff only.")
+    .toJSON(),
+  new SlashCommandBuilder()
     .setName("uploadsong")
     .setDescription("Upload an audio file from your library as a quiz song.")
     .addAttachmentOption((o) =>

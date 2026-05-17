@@ -28,7 +28,7 @@ import { spawn } from "child_process";
 import { Readable } from "stream";
 import ffmpegPath from "ffmpeg-static";
 import { getRandomSong, getWrongChoices, type SongEntry, SONGS } from "./songs.js";
-import { recordAnswer, recordWin, getTopLeaderboard, getPlayerStats } from "./leaderboard.js";
+import { recordAnswer, recordWin, getTopLeaderboard, getPlayerStats, resetLeaderboard } from "./leaderboard.js";
 import { registerCommands } from "./register-commands.js";
 import {
   addSong,
@@ -87,6 +87,7 @@ export function createBot(): Client {
         else if (cmd.commandName === "stats") await handleStatsCommand(cmd);
         else if (cmd.commandName === "uploadsong") await handleUploadSongCommand(cmd);
         else if (cmd.commandName === "help") await handleHelpCommand(cmd);
+        else if (cmd.commandName === "resetleaderboard") await handleResetLeaderboardCommand(cmd);
       } else if (interaction.isButton()) {
         await handleButtonInteraction(interaction as ButtonInteraction);
       }
@@ -622,6 +623,39 @@ async function handleHelpCommand(interaction: ChatInputCommandInteraction): Prom
     .setFooter({ text: "Good luck! 🎶" });
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+const RESET_ALLOWED_ROLES = new Set(["moderator", "senior mod", "local host", "host", "co-host", "staff"]);
+
+function hasResetPermission(interaction: ChatInputCommandInteraction): boolean {
+  const member = interaction.member;
+  if (!member || !("roles" in member)) return false;
+  const roles = member.roles;
+  if (Array.isArray(roles)) return false;
+  return roles.cache.some((r) => RESET_ALLOWED_ROLES.has(r.name.toLowerCase()));
+}
+
+async function handleResetLeaderboardCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!hasResetPermission(interaction)) {
+    await interaction.reply({
+      content: "🚫 You don't have permission to use this command. Required roles: **Moderator**, **Senior Mod**, **Local Host**, **Host**, **Co-Host**, or **Staff**.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (!interaction.guildId) {
+    await interaction.reply({ content: "❌ This command only works in a server.", ephemeral: true });
+    return;
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  const count = await resetLeaderboard();
+
+  await interaction.editReply(
+    `🗑️ Leaderboard reset! **${count}** player record${count === 1 ? "" : "s"} wiped. All scores start fresh from here.`,
+  );
 }
 
 async function handleUploadSongCommand(interaction: ChatInputCommandInteraction): Promise<void> {
