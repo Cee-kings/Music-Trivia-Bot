@@ -24,3 +24,17 @@ export const songLibraryTable = pgTable("song_library", {
 });
 
 export type SongLibraryEntry = typeof songLibraryTable.$inferSelect;
+
+export const challengeLeaderboardTable = pgTable("challenge_leaderboard", {
+  id: serial("id").primaryKey(),
+  discordUserId: text("discord_user_id").notNull().unique(),
+  username: text("username").notNull(),
+  challengeWins: integer("challenge_wins").notNull().default(0),
+  totalParticipated: integer("total_participated").notNull().default(0),
+  totalCorrect: integer("total_correct").notNull().default(0),
+  totalAnswers: integer("total_answers").notNull().default(0),
+  bestAvgTimeMs: integer("best_avg_time_ms"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ChallengeLeaderboardEntry = typeof challengeLeaderboardTable.$inferSelect;

@@ -29,6 +29,7 @@ import { Readable } from "stream";
 import ffmpegPath from "ffmpeg-static";
 import { getRandomSong, getWrongChoices, type SongEntry, SONGS } from "./songs.js";
 import { recordAnswer, recordWin, getTopLeaderboard, getPlayerStats, resetLeaderboard } from "./leaderboard.js";
+import { startChallenge, forceEndChallenge, handleChallengeButton } from "./challenge.js";
 import { registerCommands } from "./register-commands.js";
 import {
   addSong,
@@ -88,6 +89,8 @@ export function createBot(): Client {
         else if (cmd.commandName === "uploadsong") await handleUploadSongCommand(cmd);
         else if (cmd.commandName === "help") await handleHelpCommand(cmd);
         else if (cmd.commandName === "resetleaderboard") await handleResetLeaderboardCommand(cmd);
+        else if (cmd.commandName === "challenge") await handleChallengeCommand(cmd);
+        else if (cmd.commandName === "endchallenge") await handleEndChallengeCommand(cmd);
       } else if (interaction.isButton()) {
         await handleButtonInteraction(interaction as ButtonInteraction);
       }
@@ -311,6 +314,8 @@ async function handleQuizCommand(interaction: ChatInputCommandInteraction): Prom
 async function handleButtonInteraction(interaction: ButtonInteraction): Promise<void> {
   const guildId = interaction.guildId;
   if (!guildId) return;
+
+  if (handleChallengeButton(interaction)) return;
 
   const round = activeRounds.get(guildId);
   if (!round) {
@@ -683,4 +688,62 @@ async function handleUploadSongCommand(interaction: ChatInputCommandInteraction)
     `🎵 This song will use your file for playback — no Deezer needed.\n` +
     `📚 Library now has **${count}** song${count === 1 ? "" : "s"}.`,
   );
+}
+
+async function handleChallengeCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const guildId = interaction.guildId;
+  if (!guildId) {
+    await interaction.reply({ content: "❌ This command only works in a server.", ephemeral: true });
+    return;
+  }
+
+  await interaction.deferReply();
+
+  const channel = interaction.channel;
+  if (!channel || !("send" in channel)) {
+    await interaction.editReply("❌ This command must be used in a text channel.");
+    return;
+  }
+
+  const member = interaction.member as GuildMember;
+  const voiceChannel = member?.voice?.channel as VoiceChannel | null;
+
+  const result = await startChallenge(guildId, channel as import("discord.js").TextChannel, voiceChannel);
+
+  if (!result.started) {
+    await interaction.editReply(result.message);
+  } else {
+    await interaction.editReply("🏆 Challenge started! Good luck everyone!");
+  }
+}
+
+async function handleEndChallengeCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!hasResetPermission(interaction)) {
+    await interaction.reply({
+      content: "🚫 You need a mod role to end a challenge. Required: **Moderator**, **Senior Mod**, **Local Host**, **Host**, **Co-Host**, or **Staff**.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const guildId = interaction.guildId;
+  if (!guildId) {
+    await interaction.reply({ content: "❌ This command only works in a server.", ephemeral: true });
+    return;
+  }
+
+  const channel = interaction.channel;
+  if (!channel || !("send" in channel)) {
+    await interaction.reply({ content: "❌ Must be used in a text channel.", ephemeral: true });
+    return;
+  }
+
+  const username = (interaction.member as GuildMember)?.displayName ?? interaction.user.displayName ?? interaction.user.username;
+  const stopped = await forceEndChallenge(guildId, channel as import("discord.js").TextChannel, username);
+
+  if (stopped) {
+    await interaction.reply({ content: "⏹️ Challenge ended.", ephemeral: true });
+  } else {
+    await interaction.reply({ content: "⚠️ No active challenge to end.", ephemeral: true });
+  }
 }

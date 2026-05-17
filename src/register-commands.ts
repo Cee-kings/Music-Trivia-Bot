@@ -53,6 +53,14 @@ const commands = [
     .setDescription("Wipe all quiz stats and leaderboard entries for this server. Staff only.")
     .toJSON(),
   new SlashCommandBuilder()
+    .setName("challenge")
+    .setDescription("Start a 20-round music trivia challenge. No repeats, final standings at the end!")
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName("endchallenge")
+    .setDescription("Force-stop a running challenge. Staff only.")
+    .toJSON(),
+  new SlashCommandBuilder()
     .setName("uploadsong")
     .setDescription("Upload an audio file from your library as a quiz song.")
     .addAttachmentOption((o) =>

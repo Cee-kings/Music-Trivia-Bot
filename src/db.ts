@@ -41,5 +41,18 @@ export async function migrateDb(): Promise<void> {
   await pool.query(`
     ALTER TABLE song_library ADD COLUMN IF NOT EXISTS audio_url TEXT;
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS challenge_leaderboard (
+      id                 SERIAL PRIMARY KEY,
+      discord_user_id    TEXT    NOT NULL UNIQUE,
+      username           TEXT    NOT NULL,
+      challenge_wins     INTEGER NOT NULL DEFAULT 0,
+      total_participated INTEGER NOT NULL DEFAULT 0,
+      total_correct      INTEGER NOT NULL DEFAULT 0,
+      total_answers      INTEGER NOT NULL DEFAULT 0,
+      best_avg_time_ms   INTEGER,
+      updated_at         TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
   console.log("[db] Tables ready");
 }
