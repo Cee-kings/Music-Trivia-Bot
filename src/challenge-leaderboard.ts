@@ -31,6 +31,12 @@ export async function getChallengePlayerStats(discordUserId: string) {
   return rows.length > 0 ? rows[0] : null;
 }
 
+export async function resetChallengeLeaderboard(): Promise<number> {
+  const rows = await db.select().from(challengeLeaderboardTable);
+  await db.delete(challengeLeaderboardTable);
+  return rows.length;
+}
+
 export async function recordChallengeResults(results: ChallengeResult[]): Promise<void> {
   for (const r of results) {
     const existing = await db

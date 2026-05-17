@@ -30,7 +30,7 @@ import ffmpegPath from "ffmpeg-static";
 import { getRandomSong, getWrongChoices, type SongEntry, SONGS } from "./songs.js";
 import { recordAnswer, recordWin, getTopLeaderboard, getPlayerStats, resetLeaderboard } from "./leaderboard.js";
 import { startChallenge, forceEndChallenge, handleChallengeButton } from "./challenge.js";
-import { getTopChallengeLeaderboard, getChallengePlayerStats } from "./challenge-leaderboard.js";
+import { getTopChallengeLeaderboard, getChallengePlayerStats, resetChallengeLeaderboard } from "./challenge-leaderboard.js";
 import { registerCommands } from "./register-commands.js";
 import {
   addSong,
@@ -94,6 +94,7 @@ export function createBot(): Client {
         else if (cmd.commandName === "endchallenge") await handleEndChallengeCommand(cmd);
         else if (cmd.commandName === "challengeleaderboard") await handleChallengeLeaderboardCommand(cmd);
         else if (cmd.commandName === "challengestats") await handleChallengeStatsCommand(cmd);
+        else if (cmd.commandName === "resetchallengestats") await handleResetChallengeStatsCommand(cmd);
       } else if (interaction.isButton()) {
         await handleButtonInteraction(interaction as ButtonInteraction);
       }
@@ -746,6 +747,29 @@ async function handleChallengeLeaderboardCommand(interaction: ChatInputCommandIn
     .setFooter({ text: "Ranked by challenge wins · Ties broken by total correct answers" });
 
   await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleResetChallengeStatsCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!hasResetPermission(interaction)) {
+    await interaction.reply({
+      content: "🚫 You don't have permission to use this command. Required roles: **Moderator**, **Senior Mod**, **Local Host**, **Host**, **Co-Host**, or **Staff**.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (!interaction.guildId) {
+    await interaction.reply({ content: "❌ This command only works in a server.", ephemeral: true });
+    return;
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  const count = await resetChallengeLeaderboard();
+
+  await interaction.editReply(
+    `🗑️ Challenge stats reset! **${count}** player record${count === 1 ? "" : "s"} wiped. All challenge scores start fresh from here.`,
+  );
 }
 
 async function handleChallengeStatsCommand(interaction: ChatInputCommandInteraction): Promise<void> {

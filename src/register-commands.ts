@@ -72,6 +72,10 @@ const commands = [
     .setDescription("Force-stop a running challenge. Staff only.")
     .toJSON(),
   new SlashCommandBuilder()
+    .setName("resetchallengestats")
+    .setDescription("Wipe all challenge leaderboard stats for this server. Staff only.")
+    .toJSON(),
+  new SlashCommandBuilder()
     .setName("uploadsong")
     .setDescription("Upload an audio file from your library as a quiz song.")
     .addAttachmentOption((o) =>
