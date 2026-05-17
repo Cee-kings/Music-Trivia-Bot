@@ -597,10 +597,19 @@ async function handleHelpCommand(interaction: ChatInputCommandInteraction): Prom
     .setTitle("🎵 Music Trivia Bot — Commands")
     .addFields(
       {
-        name: "🎮 Playing",
+        name: "🎮 Quick Play",
         value: [
-          "`/quiz` — Start a music quiz round (join a voice channel first!)",
+          "`/quiz` — Start a single music quiz round (join a voice channel first!)",
           "`/skip` — Skip the current round and reveal the answer",
+        ].join("\n"),
+      },
+      {
+        name: "🏆 Challenge Mode",
+        value: [
+          "`/challenge` — Start a 20-round challenge (no repeats, final standings at the end!)",
+          "`/challengeleaderboard` — All-time challenge hall of fame",
+          "`/challengestats` — Your personal challenge stats",
+          "`/challengestats player: @someone` — Look up another player's challenge stats",
         ].join("\n"),
       },
       {
@@ -613,11 +622,19 @@ async function handleHelpCommand(interaction: ChatInputCommandInteraction): Prom
         ].join("\n"),
       },
       {
-        name: "🏆 Stats",
+        name: "📊 Stats & Leaderboard",
         value: [
-          "`/leaderboard` — Top 10 players",
-          "`/stats` — Your personal stats",
-          "`/stats player: @someone` — Look up another player's stats",
+          "`/leaderboard` — Top 10 quick-play players",
+          "`/stats` — Your personal quick-play stats",
+          "`/stats player: @someone` — Look up another player's quick-play stats",
+        ].join("\n"),
+      },
+      {
+        name: "🛡️ Staff Only",
+        value: [
+          "`/resetleaderboard` — Wipe all quick-play scores",
+          "`/resetchallengestats` — Wipe all challenge scores",
+          "`/endchallenge` — Force-stop a running challenge",
         ].join("\n"),
       },
       {
@@ -625,7 +642,7 @@ async function handleHelpCommand(interaction: ChatInputCommandInteraction): Prom
         value: [
           "• The bot uses your custom library once you have **3+ songs** added",
           "• Songs with uploaded files use your audio — others fall back to Deezer",
-          "• Fastest correct answer wins the round!",
+          "• Fastest correct answer wins the round — average speed breaks ties in challenge mode!",
         ].join("\n"),
       },
     )
