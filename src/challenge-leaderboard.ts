@@ -1,6 +1,6 @@
 import { db } from "./db.js";
 import { challengeLeaderboardTable } from "./schema.js";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 export interface ChallengeResult {
   discordUserId: string;
@@ -9,6 +9,17 @@ export interface ChallengeResult {
   totalAnswers: number;
   avgTimeMs: number | null;
   rank: number;
+}
+
+export async function getTopChallengeLeaderboard(limit = 10) {
+  return db
+    .select()
+    .from(challengeLeaderboardTable)
+    .orderBy(
+      desc(challengeLeaderboardTable.challengeWins),
+      desc(challengeLeaderboardTable.totalCorrect),
+    )
+    .limit(limit);
 }
 
 export async function recordChallengeResults(results: ChallengeResult[]): Promise<void> {

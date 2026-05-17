@@ -57,6 +57,10 @@ const commands = [
     .setDescription("Start a 20-round music trivia challenge. No repeats, final standings at the end!")
     .toJSON(),
   new SlashCommandBuilder()
+    .setName("challengeleaderboard")
+    .setDescription("Show the all-time hall of fame for challenge mode.")
+    .toJSON(),
+  new SlashCommandBuilder()
     .setName("endchallenge")
     .setDescription("Force-stop a running challenge. Staff only.")
     .toJSON(),

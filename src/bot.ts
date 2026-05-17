@@ -30,6 +30,7 @@ import ffmpegPath from "ffmpeg-static";
 import { getRandomSong, getWrongChoices, type SongEntry, SONGS } from "./songs.js";
 import { recordAnswer, recordWin, getTopLeaderboard, getPlayerStats, resetLeaderboard } from "./leaderboard.js";
 import { startChallenge, forceEndChallenge, handleChallengeButton } from "./challenge.js";
+import { getTopChallengeLeaderboard } from "./challenge-leaderboard.js";
 import { registerCommands } from "./register-commands.js";
 import {
   addSong,
@@ -91,6 +92,7 @@ export function createBot(): Client {
         else if (cmd.commandName === "resetleaderboard") await handleResetLeaderboardCommand(cmd);
         else if (cmd.commandName === "challenge") await handleChallengeCommand(cmd);
         else if (cmd.commandName === "endchallenge") await handleEndChallengeCommand(cmd);
+        else if (cmd.commandName === "challengeleaderboard") await handleChallengeLeaderboardCommand(cmd);
       } else if (interaction.isButton()) {
         await handleButtonInteraction(interaction as ButtonInteraction);
       }
@@ -715,6 +717,34 @@ async function handleChallengeCommand(interaction: ChatInputCommandInteraction):
   } else {
     await interaction.editReply("🏆 Challenge started! Good luck everyone!");
   }
+}
+
+async function handleChallengeLeaderboardCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  await interaction.deferReply();
+
+  const entries = await getTopChallengeLeaderboard(10);
+
+  if (entries.length === 0) {
+    await interaction.editReply("📋 No challenge results yet — start one with `/challenge`!");
+    return;
+  }
+
+  const medals = ["🥇", "🥈", "🥉"];
+  const rows = entries.map((e, i) => {
+    const medal = medals[i] ?? `**${i + 1}.**`;
+    const accuracy = e.totalAnswers > 0 ? Math.round((e.totalCorrect / e.totalAnswers) * 100) : 0;
+    const best = e.bestAvgTimeMs !== null ? `${(e.bestAvgTimeMs / 1000).toFixed(2)}s` : "—";
+    return `${medal} **${e.username}** — 🏆 ${e.challengeWins} wins · ✅ ${accuracy}% accuracy · ⚡ Best avg: ${best} · 🎮 ${e.totalParticipated} played`;
+  });
+
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle("🏆 Challenge Mode — All-Time Hall of Fame")
+    .setDescription(rows.join("\n"))
+    .setTimestamp()
+    .setFooter({ text: "Ranked by challenge wins · Ties broken by total correct answers" });
+
+  await interaction.editReply({ embeds: [embed] });
 }
 
 async function handleEndChallengeCommand(interaction: ChatInputCommandInteraction): Promise<void> {
