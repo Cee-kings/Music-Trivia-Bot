@@ -114,6 +114,15 @@ export function createBot(): Client {
   return client;
 }
 
+async function isAudioUrlValid(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { method: "HEAD" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function getDeezerPreviewUrl(song: SongEntry): Promise<string | null> {
   try {
     const query = encodeURIComponent(song.title + " " + song.artist);
@@ -130,22 +139,38 @@ async function getDeezerPreviewUrl(song: SongEntry): Promise<string | null> {
   }
 }
 
-async function pickSongWithPreview(maxAttempts = 5): Promise<{ song: SongEntry; previewUrl: string } | null> {
+async function pickSongWithPreview(maxAttempts = 5): Promise<{ song: SongEntry; previewUrl: string; expiredSongs: SongEntry[] } | null> {
   const customSongs = await getAllSongsAsEntries();
   const pool = customSongs.length >= 3 ? customSongs : SONGS;
+  const expiredSongs: SongEntry[] = [];
+  const expiredTitles = new Set<string>();
 
   for (let i = 0; i < maxAttempts; i++) {
     const song = getRandomSong(pool);
 
-    // Use uploaded audio directly — no Deezer needed
     if (song.audioUrl) {
-      return { song, previewUrl: song.audioUrl };
+      const valid = await isAudioUrlValid(song.audioUrl);
+      if (valid) {
+        return { song, previewUrl: song.audioUrl, expiredSongs };
+      }
+      // URL is expired — track it (deduplicated) and fall back to Deezer
+      console.warn(`[quiz] Audio URL expired for "${song.title}" — falling back to Deezer`);
+      if (!expiredTitles.has(song.title)) {
+        expiredSongs.push(song);
+        expiredTitles.add(song.title);
+      }
+      const deezerUrl = await getDeezerPreviewUrl(song);
+      if (deezerUrl) {
+        return { song, previewUrl: deezerUrl, expiredSongs };
+      }
+      console.warn(`[quiz] No Deezer preview for "${song.title}" either — skipping (attempt ${i + 1}/${maxAttempts})`);
+      continue;
     }
 
-    // Fall back to Deezer preview
+    // No uploaded audio — use Deezer preview
     const previewUrl = await getDeezerPreviewUrl(song);
     if (previewUrl) {
-      return { song, previewUrl };
+      return { song, previewUrl, expiredSongs };
     }
     console.warn(`[quiz] No preview for "${song.title}" — trying another song (attempt ${i + 1}/${maxAttempts})`);
   }
@@ -281,7 +306,15 @@ async function handleQuizCommand(interaction: ChatInputCommandInteraction): Prom
     await interaction.editReply({ content: "❌ Couldn't find a song with an audio preview right now — please try again!" });
     return;
   }
-  const { song: correctSong, previewUrl } = picked;
+  const { song: correctSong, previewUrl, expiredSongs } = picked;
+
+  if (expiredSongs.length > 0) {
+    const list = expiredSongs.map((s) => `• **${s.title}** by ${s.artist}`).join("\n");
+    interaction.followUp({
+      content: `⚠️ The following song(s) have expired Discord CDN URLs and won't play until re-uploaded with \`/uploadsong\`:\n${list}`,
+      ephemeral: true,
+    }).catch(() => {});
+  }
 
   const wrongChoices = getWrongChoices(correctSong, 2);
   const allChoices = [correctSong, ...wrongChoices].sort(() => Math.random() - 0.5);
@@ -735,6 +768,14 @@ async function handleChallengeCommand(interaction: ChatInputCommandInteraction):
     await interaction.editReply(result.message);
   } else {
     await interaction.editReply("🏆 Challenge started! Good luck everyone!");
+  }
+
+  if (result.expiredSongs.length > 0) {
+    const list = result.expiredSongs.map((s) => `• **${s.title}** by ${s.artist}`).join("\n");
+    interaction.followUp({
+      content: `⚠️ The following song(s) have expired Discord CDN URLs and won't play until re-uploaded with \`/uploadsong\`:\n${list}`,
+      ephemeral: true,
+    }).catch(() => {});
   }
 }
 

@@ -69,6 +69,15 @@ interface ChallengeSession {
 
 export const activeChallenges = new Map<string, ChallengeSession>();
 
+async function isAudioUrlValid(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { method: "HEAD" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function getDeezerPreviewUrl(song: SongEntry): Promise<string | null> {
   try {
     const query = encodeURIComponent(`${song.title} ${song.artist}`);
@@ -84,16 +93,35 @@ async function getDeezerPreviewUrl(song: SongEntry): Promise<string | null> {
   }
 }
 
-async function buildRounds(pool: SongEntry[]): Promise<RoundData[]> {
+async function buildRounds(pool: SongEntry[]): Promise<{ rounds: RoundData[]; expiredSongs: SongEntry[] }> {
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   const rounds: RoundData[] = [];
   const usedTitles = new Set<string>();
+  const expiredSongs: SongEntry[] = [];
+  const expiredTitles = new Set<string>();
 
   for (const song of shuffled) {
     if (rounds.length >= TOTAL_ROUNDS) break;
     if (usedTitles.has(song.title)) continue;
 
-    const previewUrl = song.audioUrl ? song.audioUrl : await getDeezerPreviewUrl(song);
+    let previewUrl: string | null = null;
+    if (song.audioUrl) {
+      const valid = await isAudioUrlValid(song.audioUrl);
+      if (valid) {
+        previewUrl = song.audioUrl;
+      } else {
+        // URL is expired — track it and try Deezer as fallback
+        console.warn(`[challenge] Audio URL expired for "${song.title}" — falling back to Deezer`);
+        if (!expiredTitles.has(song.title)) {
+          expiredSongs.push(song);
+          expiredTitles.add(song.title);
+        }
+        previewUrl = await getDeezerPreviewUrl(song);
+      }
+    } else {
+      previewUrl = await getDeezerPreviewUrl(song);
+    }
+
     if (!previewUrl) continue;
 
     const wrongPool = pool.length >= 3 ? pool : SONGS;
@@ -105,7 +133,7 @@ async function buildRounds(pool: SongEntry[]): Promise<RoundData[]> {
     usedTitles.add(song.title);
   }
 
-  return rounds;
+  return { rounds, expiredSongs };
 }
 
 function destroyVoiceConnection(guildId: string): void {
@@ -449,12 +477,13 @@ export async function startChallenge(
   guildId: string,
   channel: TextChannel,
   voiceChannel: VoiceChannel | null,
-): Promise<{ started: boolean; message: string }> {
+): Promise<{ started: boolean; message: string; expiredSongs: SongEntry[] }> {
   if (activeChallenges.has(guildId)) {
     return {
       started: false,
       message:
         "⚠️ A challenge is already running in this server! Wait for it to finish or have a mod use `/endchallenge`.",
+      expiredSongs: [],
     };
   }
 
@@ -465,13 +494,14 @@ export async function startChallenge(
     "🎵 **Building your challenge...** Fetching song previews, please wait!",
   );
 
-  const rounds = await buildRounds(pool);
+  const { rounds, expiredSongs } = await buildRounds(pool);
   await progressMsg.delete().catch(() => {});
 
   if (rounds.length < MIN_ROUNDS) {
     return {
       started: false,
       message: `❌ Couldn't find enough songs with audio previews (found ${rounds.length}, need at least ${MIN_ROUNDS}). Please try again!`,
+      expiredSongs,
     };
   }
 
@@ -509,7 +539,7 @@ export async function startChallenge(
     });
   }, 3_000);
 
-  return { started: true, message: "" };
+  return { started: true, message: "", expiredSongs };
 }
 
 export async function forceEndChallenge(
