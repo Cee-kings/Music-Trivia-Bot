@@ -180,15 +180,19 @@ async function tryVoicePlayback(
     );
 
     const ffmpeg = spawn(ffmpegPath!, [
+      "-loglevel", "error",   // suppress progress/stats lines — only log real errors
+      "-nostats",
       "-f", "mp3", "-i", "pipe:0",
       "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1",
     ]);
 
     // Single cleanup path — kills ffmpeg and destroys the stream exactly once
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
     let cleaned = false;
     function cleanup() {
       if (cleaned) return;
       cleaned = true;
+      clearTimeout(killTimer);
       mp3Stream.unpipe(ffmpeg.stdin);
       mp3Stream.destroy();
       if (!ffmpeg.killed) ffmpeg.kill("SIGTERM");
@@ -200,8 +204,12 @@ async function tryVoicePlayback(
     );
     ffmpeg.on("close", (code) => {
       if (code !== 0 && code !== null) console.warn(`[challenge/ffmpeg] Exited with code ${code}`);
+      cleanup();
     });
-    ffmpeg.stderr.on("data", () => {});
+    ffmpeg.stderr.on("data", (d: Buffer) => {
+      const msg = d.toString().trim();
+      if (msg) console.error("[challenge/ffmpeg] Error:", msg);
+    });
     ffmpeg.stdin.on("error", () => {});
     mp3Stream.pipe(ffmpeg.stdin);
 
@@ -212,6 +220,16 @@ async function tryVoicePlayback(
       cleanup();
     });
     player.on(AudioPlayerStatus.Idle, () => cleanup());
+
+    // Kill ffmpeg immediately when the connection is torn down externally
+    // (e.g. round timer calls destroyVoiceConnection before the player goes Idle)
+    connection.on(VoiceConnectionStatus.Destroyed, () => cleanup());
+
+    // Hard safety net — guarantee ffmpeg is dead within 35 s no matter what
+    killTimer = setTimeout(() => {
+      console.warn("[challenge/ffmpeg] Hard timeout reached — force-killing process");
+      cleanup();
+    }, 35_000);
 
     connection.subscribe(player);
     player.play(resource);
