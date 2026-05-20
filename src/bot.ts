@@ -29,7 +29,7 @@ import { Readable } from "stream";
 import ffmpegPath from "ffmpeg-static";
 import { getRandomSong, getWrongChoices, type SongEntry, SONGS } from "./songs.js";
 import { recordAnswer, recordWin, getTopLeaderboard, getPlayerStats, resetLeaderboard } from "./leaderboard.js";
-import { startChallenge, forceEndChallenge, handleChallengeButton } from "./challenge.js";
+import { startChallenge, forceEndChallenge, handleChallengeButton, activeChallenges } from "./challenge.js";
 import { getTopChallengeLeaderboard, getChallengePlayerStats, resetChallengeLeaderboard } from "./challenge-leaderboard.js";
 import { registerCommands } from "./register-commands.js";
 import {
@@ -40,6 +40,7 @@ import {
   getSongCount,
   setAudioUrl,
 } from "./song-library.js";
+import { trackProcess, untrackProcess, getProcessStats } from "./process-tracker.js";
 
 const QUIZ_DURATION_MS = 10_000;
 const VOICE_CONNECT_TIMEOUT_MS = 15_000;
@@ -96,6 +97,7 @@ export function createBot(): Client {
         else if (cmd.commandName === "challengestats") await handleChallengeStatsCommand(cmd);
         else if (cmd.commandName === "resetchallengestats") await handleResetChallengeStatsCommand(cmd);
         else if (cmd.commandName === "checksongs") await handleCheckSongsCommand(cmd);
+        else if (cmd.commandName === "botstatus") await handleBotStatusCommand(cmd);
       } else if (interaction.isButton()) {
         await handleButtonInteraction(interaction as ButtonInteraction);
       }
@@ -234,6 +236,8 @@ async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel, pre
       "pipe:1",
     ]);
 
+    if (ffmpeg.pid !== undefined) trackProcess(guildId, ffmpeg.pid, "quiz");
+
     // Single cleanup path — kills ffmpeg and destroys the stream exactly once
     let killTimer: ReturnType<typeof setTimeout> | undefined;
     let cleaned = false;
@@ -241,6 +245,7 @@ async function tryVoicePlayback(song: SongEntry, voiceChannel: VoiceChannel, pre
       if (cleaned) return;
       cleaned = true;
       clearTimeout(killTimer);
+      untrackProcess(guildId);
       mp3Stream.unpipe(ffmpeg.stdin);
       mp3Stream.destroy();
       if (!ffmpeg.killed) ffmpeg.kill("SIGTERM");
@@ -698,6 +703,7 @@ async function handleHelpCommand(interaction: ChatInputCommandInteraction): Prom
           "`/resetchallengestats` — Wipe all challenge scores",
           "`/endchallenge` — Force-stop a running challenge",
           "`/checksongs` — Scan the whole library for expired CDN audio URLs",
+          "`/botstatus` — Live bot health: uptime, memory, active audio processes",
         ].join("\n"),
       },
       {
@@ -827,6 +833,59 @@ async function handleCheckSongsCommand(interaction: ChatInputCommandInteraction)
     .setTimestamp();
 
   await interaction.editReply({ content: "", embeds: [embed] });
+}
+
+function formatUptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return [d && `${d}d`, h && `${h}h`, m && `${m}m`, `${s}s`].filter(Boolean).join(" ");
+}
+
+async function handleBotStatusCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!hasModeratorRole(interaction)) { await replyNoPermission(interaction); return; }
+
+  const processes = getProcessStats();
+  const mem = process.memoryUsage();
+  const uptimeStr = formatUptime(Math.floor(process.uptime()));
+  const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
+  const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
+  const rssMB = Math.round(mem.rss / 1024 / 1024);
+
+  const quizCount = activeRounds.size;
+  const challengeCount = activeChallenges.size;
+  const ffmpegCount = processes.length;
+
+  const now = Date.now();
+  const processLines = processes.map((p) => {
+    const ageMs = now - p.startedAt.getTime();
+    const ageSec = Math.round(ageMs / 1000);
+    const leak = ageMs > 35_000 ? " ⚠️ **LEAK?**" : "";
+    return `• \`${p.guildId}\` — ${p.type} — PID \`${p.pid}\` — ${ageSec}s${leak}`;
+  });
+
+  const embed = new EmbedBuilder()
+    .setColor(ffmpegCount === 0 ? 0x57f287 : 0xfee75c)
+    .setTitle("🤖 Bot Status")
+    .addFields(
+      { name: "⏱️ Uptime",          value: uptimeStr,                              inline: true },
+      { name: "💾 Heap",            value: `${heapMB} / ${heapTotalMB} MB`,        inline: true },
+      { name: "📦 RSS",             value: `${rssMB} MB`,                          inline: true },
+      { name: "🎵 ffmpeg processes", value: ffmpegCount.toString(),                 inline: true },
+      { name: "🎮 Active quizzes",  value: quizCount.toString(),                   inline: true },
+      { name: "🏆 Active challenges", value: challengeCount.toString(),             inline: true },
+    );
+
+  if (processLines.length > 0) {
+    embed.addFields({ name: "🔊 Running ffmpeg processes", value: processLines.join("\n") });
+  } else {
+    embed.addFields({ name: "🔊 Running ffmpeg processes", value: "None — all clean ✅" });
+  }
+
+  embed.setTimestamp().setFooter({ text: "Processes > 35 s are flagged as potential leaks" });
+
+  await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
 async function handleChallengeCommand(interaction: ChatInputCommandInteraction): Promise<void> {

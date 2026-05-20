@@ -95,6 +95,10 @@ const commands = [
     .setName("checksongs")
     .setDescription("Scan the entire song library for expired Discord CDN URLs. Moderator only.")
     .toJSON(),
+  new SlashCommandBuilder()
+    .setName("botstatus")
+    .setDescription("Show live bot health: uptime, memory, and active ffmpeg processes. Moderator only.")
+    .toJSON(),
 ];
 
 export async function registerCommands(): Promise<void> {

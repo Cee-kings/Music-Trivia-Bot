@@ -26,6 +26,7 @@ import ffmpegPath from "ffmpeg-static";
 import { SONGS, getWrongChoices, type SongEntry } from "./songs.js";
 import { getAllSongsAsEntries } from "./song-library.js";
 import { recordChallengeResults, type ChallengeResult } from "./challenge-leaderboard.js";
+import { trackProcess, untrackProcess } from "./process-tracker.js";
 
 const ROUND_DURATION_MS = 10_000;
 const ROUND_GAP_MS = 3_000;
@@ -186,6 +187,8 @@ async function tryVoicePlayback(
       "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1",
     ]);
 
+    if (ffmpeg.pid !== undefined) trackProcess(guildId, ffmpeg.pid, "challenge");
+
     // Single cleanup path — kills ffmpeg and destroys the stream exactly once
     let killTimer: ReturnType<typeof setTimeout> | undefined;
     let cleaned = false;
@@ -193,6 +196,7 @@ async function tryVoicePlayback(
       if (cleaned) return;
       cleaned = true;
       clearTimeout(killTimer);
+      untrackProcess(guildId);
       mp3Stream.unpipe(ffmpeg.stdin);
       mp3Stream.destroy();
       if (!ffmpeg.killed) ffmpeg.kill("SIGTERM");
